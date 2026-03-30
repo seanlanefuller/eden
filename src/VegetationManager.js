@@ -1,0 +1,1076 @@
+import * as THREE from 'three';
+import { CONFIG } from './Config.js';
+
+export class VegetationManager {
+    constructor(worldManager) {
+        this.world = worldManager;
+        this.plants = [];
+        this.textures = {};
+        this.materials = {};
+    }
+
+    initialize(scene) {
+        this.generateTextures();
+        this.createMaterials();
+
+        const img = new Image();
+        img.src = 'research/clean_garden_map.gif';
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, 512, 512);
+            const maskData = ctx.getImageData(0, 0, 512, 512).data;
+
+            const waitForHeightData = () => {
+                if (this.world.heightData) {
+                    this.spawnPlants(scene, maskData);
+                } else {
+                    setTimeout(waitForHeightData, 100);
+                }
+            };
+
+            waitForHeightData();
+        };
+    }
+
+    spawnPlants(scene, maskData) {
+        const size = 512;
+        const scale = 700;
+
+        let densityVal = 1.0;
+        if (CONFIG && CONFIG.FLORA_DENSITY) {
+            densityVal = Number(CONFIG.FLORA_DENSITY);
+        }
+        if (isNaN(densityVal) || densityVal < 0.1) densityVal = 1.0;
+
+        console.log("Eden: Flora Density Loaded:", densityVal);
+
+        const getClass = (x, z) => {
+            const px = Math.floor((x / scale) * (size - 1));
+            const pz = Math.floor((-z / scale) * (size - 1));
+            if (px < 0 || px >= size || pz < 0 || pz >= size) return null;
+            const canvasY = (size - 1) - pz;
+            const idx = (canvasY * size + px) * 4;
+            return { r: maskData[idx], g: maskData[idx + 1], b: maskData[idx + 2] };
+        };
+
+        const dist = (c1, r, g, b) => Math.sqrt((c1.r - r) ** 2 + (c1.g - g) ** 2 + (c1.b - b) ** 2);
+
+        // Helper to spawn
+        const spawnOne = (fn, type, x, z, yOffset = 0, scaleMin = 1, scaleVar = 0) => {
+            const h = this.world.getTerrainHeight(x, z);
+            const obj = fn.call(this, type);
+            obj.position.set(x, h + yOffset, z);
+            const s = scaleMin + Math.random() * scaleVar;
+            obj.scale.set(s, s, s);
+            scene.add(obj);
+            this.plants.push(obj);
+        };
+
+        // ZONES (World Coords)
+        const ZONES = {
+            harbarger: { x: 308, z: -455, r: 40 },
+            daylily: { x: 252, z: -427, r: 30 },
+            aquatic: { x: 378, z: -455, r: 50 },
+            teaching: { x: 217, z: -49, r: 40 },
+            herb: { x: 224, z: -441, r: 30 },
+            hope: { x: 126, z: -392, r: 25 },
+            vegetable: { x: 133, z: -315, r: 35 },
+            bamboo: { x: 112, z: -238, r: 25 },
+            spencer: { x: 385, z: -273, r: 25 },
+            motherearth: { x: 161, z: -371, r: -25 }, // Radius fixed
+            pollinator: { x: 287, z: -210, r: 20 },
+            wicks: { x: 224, z: -245, r: 40 }, // Wicks Family Garden
+            fernglade: { x: 245, z: -350, r: 35 }, // Fern Glade
+            cedarglade: { x: 350, z: -315, r: 35 }, // Cedar Glade (Loc 7)
+            birdwatch: { x: 168, z: -259, r: 25 },   // Lewis Bird Watch (Loc 21)
+            train: { x: 469, z: -287, r: 20 }       // Train Garden (Loc 6: 67, 41) Reduced 30%
+        };
+
+        // 1. ZONED PLANTING
+        // BAMBOO GROVE
+        for (let i = 0; i < 80 * densityVal; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = Math.random() * ZONES.bamboo.r;
+            const x = ZONES.bamboo.x + Math.cos(angle) * r;
+            const z = ZONES.bamboo.z + Math.sin(angle) * r;
+            spawnOne(this.createBamboo, 'bamboo', x, z, 0, 0.8, 0.4);
+        }
+
+        // BAMBOO Surroundings for Mother Earth
+        for (let i = 0; i < 50 * densityVal; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            // Leave a larger clearing in the middle (min radius 8)
+            const r = 8 + Math.random() * (25 - 8);
+            const x = 161 + Math.cos(angle) * r;
+            const z = -371 + Math.sin(angle) * r;
+            spawnOne(this.createBamboo, 'bamboo', x, z, 0, 0.9, 0.3);
+        }
+
+        // Pollinator Walk Wildflowers
+        for (let i = 0; i < 80 * densityVal; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = Math.random() * ZONES.pollinator.r;
+            const x = ZONES.pollinator.x + Math.cos(angle) * r;
+            const z = ZONES.pollinator.z + Math.sin(angle) * r;
+
+            const types = ['wildflower', 'coneflower', 'marigold', 'zinnia'];
+            const type = Math.random() > 0.5 ? 'wildflower' : (Math.random() > 0.5 ? 'coneflower' : 'marigold');
+
+            spawnOne(this.createFlower, type, x, z, 0.2, 0.7, 0.3);
+        }
+
+        // Wicks Family Garden Features
+        for (let r = 0; r < 20; r++) {
+            for (let c = 0; c < 20; c++) {
+                if ((r + c) % 3 === 0 || (r * c) % 5 === 0) continue; // Paths
+                if (Math.random() > densityVal) continue; // Density Control
+
+                const spacing = 1.5;
+                const x = ZONES.wicks.x - 15 + r * spacing;
+                const z = ZONES.wicks.z - 15 + c * spacing;
+                spawnOne(this.createFlower, 'sunflower', x, z, 0.2, 1.5, 0.5);
+            }
+        }
+
+        // 2. Pollywog Bog (Small Water Feature + Cattails)
+        const bogX = ZONES.wicks.x + 20;
+        const bogZ = ZONES.wicks.z + 10;
+
+        for (let i = 0; i < 30 * densityVal; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = 3 + Math.random() * 2; // Ring around tiny pond
+            const x = bogX + Math.cos(angle) * r;
+            const z = bogZ + Math.sin(angle) * r;
+            spawnOne(this.createFlower, 'cattail', x, z, 0, 1.0, 0.5);
+            if (Math.random() > 0.6) {
+                spawnOne(this.createAquatic, 'lilypad', x, z, 0.05);
+            }
+        }
+
+        // Spencer Volunteer Tribute Garden
+        for (let i = 0; i < 50 * densityVal; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = Math.random() * ZONES.spencer.r;
+            const x = ZONES.spencer.x + Math.cos(angle) * r;
+            const z = ZONES.spencer.z + Math.sin(angle) * r;
+
+            const rand = Math.random();
+            if (rand < 0.2) {
+                // Shrub (Boxwood)
+                spawnOne(this.createBush, 'boxwood', x, z, 0.2, 0.5, 0.2);
+            } else if (rand < 0.4) {
+                // Coneflower
+                spawnOne(this.createFlower, 'coneflower', x, z, 0.2, 0.8, 0.2);
+            } else if (rand < 0.7) {
+                // Trillium
+                spawnOne(this.createFlower, 'trillium', x, z, 0.1, 0.5, 0.2);
+            } else {
+                // Lamb's Ear (Ground cover)
+                spawnOne(this.createFlower, 'lambsear', x, z, 0.1, 0.6, 0.1);
+            }
+        }
+
+        // FERN GLADE
+        for (let i = 0; i < 150 * densityVal; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = Math.random() * ZONES.fernglade.r;
+            const x = ZONES.fernglade.x + Math.cos(angle) * r;
+            const z = ZONES.fernglade.z + Math.sin(angle) * r;
+            spawnOne(this.createFern, 'fern', x, z, 0, 1.0, 0.5);
+        }
+
+        // Train Garden (Miniature Landscape)
+        // Dwarf Conifers, Sedums, Miniature Hostas, Ferns
+        for (let i = 0; i < 200 * densityVal; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = Math.random() * ZONES.train.r;
+            const x = ZONES.train.x + Math.cos(angle) * r;
+            const z = ZONES.train.z + Math.sin(angle) * r;
+
+            // Clear track area (simplified: clear center ring?)
+            // Let's just scatter randomly for now, maybe tracks go over.
+
+            const rand = Math.random();
+            if (rand < 0.4) {
+                // Dwarf Conifer (Small Pine/Cedar)
+                const type = Math.random() > 0.5 ? 'pine' : 'cedar';
+                spawnOne(this.createTree, type, x, z, 0, 0.2, 0.1); // Scale 0.2
+            } else if (rand < 0.6) {
+                // Sedum (Succulents/Rock plants) - Use small boxwood or hydrangea with different color?
+                // Use boxwood scaled tiny
+                spawnOne(this.createBush, 'boxwood', x, z, 0, 0.15, 0.05);
+            } else if (rand < 0.8) {
+                // Miniature Hosta - Use generic leaves (lilypad mesh or fern?)
+                // Use Fern scaled very small
+                spawnOne(this.createFern, 'fern', x, z, 0, 0.2, 0.1);
+            } else {
+                // Miniature Perennial - Small flower
+                spawnOne(this.createFlower, 'wildflower', x, z, 0, 0.3, 0.1);
+            }
+        }
+
+        // Harbarger Hydrangea Border
+        for (let i = 0; i < 60 * densityVal; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const x = ZONES.harbarger.x + Math.cos(angle) * 35;
+            const z = ZONES.harbarger.z + Math.sin(angle) * 35;
+            spawnOne(this.createBush, 'hydrangea', x, z, 0, 1.0, 0.3);
+        }
+
+        // Daylily Garden
+        for (let i = 0; i < 100 * densityVal; i++) {
+            const x = ZONES.daylily.x + (Math.random() - 0.5) * 50;
+            const z = ZONES.daylily.z + (Math.random() - 0.5) * 50;
+            spawnOne(this.createFlower, 'daylily', x, z, 0.1, 0.8, 0.2);
+        }
+
+        // Aquatic Garden (Damson)
+        for (let i = 0; i < 25 * densityVal; i++) {
+            const x = ZONES.aquatic.x + (Math.random() - 0.5) * 60;
+            const z = ZONES.aquatic.z + (Math.random() - 0.5) * 60;
+            if (this.world.identifyTerrain(x, z) === 'Water') { // Only spawn on water
+                const type = Math.random() > 0.4 ? 'lilypad' : (Math.random() > 0.5 ? 'lotus' : 'victorialily');
+                spawnOne(this.createAquatic, type, x, z, 0.05, 1.0, 0.5);
+            }
+        }
+
+        // Herb Garden (Rows)
+        const herbTypes = ['basil', 'lavender', 'chives', 'lemonbalm', 'mint', 'thyme'];
+        for (let r = 0; r < 6; r++) {
+            const type = herbTypes[r];
+            for (let c = 0; c < 15 * densityVal; c++) {
+                // Adjusted spacing for density? Or scaling number of plants in row. 
+                // Row length fixed? Let's just random drop in row strip.
+                const x = ZONES.herb.x - 10 + r * 3;
+                const z = ZONES.herb.z - 20 + c * (40 / (15 * densityVal)); // Distribute along line
+                spawnOne(this.createFlower, type, x, z, 0.1, 0.8, 0.2);
+            }
+        }
+
+        // Hope Garden (Annuals) - Random mix
+        const hopeTypes = ['hope_blue', 'hope_white', 'hope_yellow', 'tulip'];
+        for (let i = 0; i < 120 * densityVal; i++) {
+            const type = hopeTypes[Math.floor(Math.random() * hopeTypes.length)];
+            const angle = Math.random() * Math.PI * 2;
+            const r = Math.random() * 20;
+            spawnOne(this.createFlower, type, ZONES.hope.x + Math.cos(angle) * r, ZONES.hope.z + Math.sin(angle) * r, 0.1, 0.8, 0.2);
+        }
+
+        // Vegetable Garden (Rows)
+        const vegTypes = ['tomato', 'pepper', 'eggplant', 'lettuce', 'kale', 'broccoli', 'squash', 'pumpkin', 'okra'];
+        let vr = 0;
+        vegTypes.forEach(type => {
+            const xRow = ZONES.vegetable.x - 15 + vr * 3.5;
+            for (let k = 0; k < 12 * densityVal; k++) {
+                const z = ZONES.vegetable.z - 15 + k * (30 / (12 * densityVal));
+                spawnOne(this.createFlower, type, xRow, z, 0.1, 1.0, 0.2);
+            }
+            vr++;
+        });
+
+        // CEDAR GLADE
+        for (let i = 0; i < 40 * densityVal; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = Math.random() * ZONES.cedarglade.r;
+            const x = ZONES.cedarglade.x + Math.cos(angle) * r;
+            const z = ZONES.cedarglade.z + Math.sin(angle) * r;
+            spawnOne(this.createTree, 'cedar', x, z, 0, 1.0, 0.5);
+        }
+
+        // HIVE BOX (Pollinator Garden)
+        const hiveX = ZONES.pollinator.x + 5;
+        const hiveZ = ZONES.pollinator.z + 5;
+        const hive = this.createHiveBox();
+        const hiveH = this.world.getTerrainHeight(hiveX, hiveZ);
+        hive.position.set(hiveX, hiveH, hiveZ);
+        scene.add(hive);
+        this.plants.push(hive);
+
+
+        // 2. PROCEDURAL FILL (Based on Map Colors)
+
+        // Base Step 5m. Scaled step = 5 / sqrt(density)
+        const procStep = 5 / Math.sqrt(densityVal);
+
+        // Scan entire map with step
+        for (let x = 0; x < scale; x += procStep) {
+            for (let z = -scale; z < 0; z += procStep) {
+
+                const c = getClass(x, z);
+                if (!c) continue;
+
+                // Color Matching
+                // Forest Green -> Trees (Updated to match Forest Floor)
+                if (dist(c, 96, 156, 135) < 50) {
+                    // EXCLUSION ZONES
+                    if (Math.hypot(x - ZONES.wicks.x, z - ZONES.wicks.z) < ZONES.wicks.r) continue;
+
+                    if (Math.random() < 0.4) {
+                        // Weighted probability for tree types
+                        let type = 'standard';
+                        const r = Math.random();
+                        if (r < 0.2) type = 'oak';
+                        else if (r < 0.4) type = 'pine';
+                        else if (r < 0.5) type = 'cedar';
+                        else if (r < 0.6) type = 'dogwood';
+                        else if (r < 0.7) type = 'magnolia';
+                        else if (r < 0.75) type = 'cherryblossom'; // Accent
+
+                        let xx = x + Math.random() * 4;
+                        let zz = z + Math.random() * 4;
+                        // Use spawnOne helper logic (but safely inline here or just call it if available? 
+                        // It is available as helper in closure in other context? 
+                        // Wait, spawnOne is a helper inside spawnPlants. Yes.
+                        spawnOne(this.createTree, type, xx, zz, 0, 1.6, 1.0);
+                    }
+                }
+                // Light Green -> Grass/Bushes (Updated to match Grass)
+                else if (dist(c, 135, 182, 150) < 50) {
+                    if (Math.random() < 0.15) {
+                        const type = Math.random() > 0.5 ? 'azalea' : 'boxwood';
+                        spawnOne(this.createBush, type, x + Math.random() * 4, z + Math.random() * 4, 0, 1, 0.3);
+                    }
+                }
+            }
+        }
+
+        // SHORELINE ROCKS (Procedural)
+        const rockStep = 2 / Math.sqrt(densityVal);
+
+        for (let x = 0; x < scale; x += rockStep) {
+            for (let z = -scale; z < 0; z += rockStep) {
+                const terrain = this.world.identifyTerrain(x, z);
+                if (terrain === 'Water') continue; // Verify locally
+
+                let isShore = false;
+                // Check neighbors for water
+                if (this.world.identifyTerrain(x + 2, z) === 'Water' ||
+                    this.world.identifyTerrain(x - 2, z) === 'Water' ||
+                    this.world.identifyTerrain(x, z + 2) === 'Water' ||
+                    this.world.identifyTerrain(x, z - 2) === 'Water') {
+                    isShore = true;
+                }
+
+                if (isShore && Math.random() < 0.7) {
+                    const rock = this.createRock();
+                    rock.position.set(x, this.world.getTerrainHeight(x, z), z);
+                    scene.add(rock);
+                    this.plants.push(rock);
+                }
+            }
+        }
+
+    }
+
+
+    generateTextures() {
+        const createTex = (drawFn) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            drawFn(ctx);
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            return tex;
+        };
+
+        // Helper: Draw realistic leaf cluster
+        const drawCluster = (ctx, colorBase, colorHighlight, type) => {
+            ctx.clearRect(0, 0, 256, 256);
+
+            // Scatter leaves from center
+            for (let i = 0; i < 60; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 100;
+                const size = 20 + Math.random() * 30;
+
+                const x = 128 + Math.cos(angle) * dist;
+                const y = 128 + Math.sin(angle) * dist;
+
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(Math.random() * Math.PI * 2);
+
+                ctx.fillStyle = Math.random() > 0.5 ? colorBase : colorHighlight;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, size, size / 2, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Vein
+                ctx.strokeStyle = '#003300';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(-size, 0); ctx.lineTo(size, 0);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            // Flowers if needed
+            if (type === 'dogwood') {
+                for (let i = 0; i < 40; i++) {
+                    const x = Math.random() * 256;
+                    const y = Math.random() * 256;
+                    if (Math.hypot(x - 128, y - 128) > 110) continue;
+
+                    ctx.fillStyle = '#FFF';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 10, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#FFC0CB';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+            if (type === 'magnolia') {
+                for (let i = 0; i < 20; i++) {
+                    const x = Math.random() * 256;
+                    const y = Math.random() * 256;
+                    if (Math.hypot(x - 128, y - 128) > 110) continue;
+
+                    ctx.fillStyle = '#F8F8FF';
+                    ctx.beginPath();
+                    ctx.ellipse(x, y, 15, 10, Math.random(), 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            if (type === 'azalea') {
+                for (let i = 0; i < 60; i++) {
+                    const x = Math.random() * 256;
+                    const y = Math.random() * 256;
+                    ctx.fillStyle = '#FF69B4'; // Hot pink
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            if (type === 'hydrangea') {
+                // Clusters of small blue dots
+                for (let k = 0; k < 10; k++) {
+                    const cx = 30 + Math.random() * 196;
+                    const cy = 30 + Math.random() * 196;
+                    for (let i = 0; i < 20; i++) {
+                        ctx.fillStyle = '#6495ED';
+                        ctx.beginPath();
+                        ctx.arc(cx + (Math.random() - 0.5) * 40, cy + (Math.random() - 0.5) * 40, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+        };
+
+        // ... existing textures ...
+        this.textures.dogwood = createTex(ctx => drawCluster(ctx, '#228B22', '#32CD32', 'dogwood'));
+        this.textures.magnolia = createTex(ctx => drawCluster(ctx, '#006400', '#2E8B57', 'magnolia'));
+        this.textures.standard = createTex(ctx => drawCluster(ctx, '#006400', '#228B22', 'standard'));
+        this.textures.azalea = createTex(ctx => drawCluster(ctx, '#2E8B57', '#3CB371', 'azalea'));
+        this.textures.hydrangea = createTex(ctx => drawCluster(ctx, '#228B22', '#32CD32', 'hydrangea'));
+
+        // NEW TEXTURES
+        this.textures.rhododendron = createTex(ctx => drawCluster(ctx, '#006400', '#228B22', 'rhododendron')); // Dark leaves
+        this.textures.cherryblossom = createTex(ctx => drawCluster(ctx, '#FF69B4', '#FFB6C1', 'cherryblossom')); // Pink cloud
+
+        // FLOWERS (Simple stylized top-down or side view for billboarding)
+        const drawFlower = (ctx, colorPetal, colorCenter, petals) => {
+            ctx.clearRect(0, 0, 256, 256);
+            const cx = 128, cy = 128;
+            ctx.fillStyle = colorPetal;
+            for (let i = 0; i < petals; i++) {
+                const angle = (i / petals) * Math.PI * 2;
+                const x = cx + Math.cos(angle) * 60;
+                const y = cy + Math.sin(angle) * 60;
+                ctx.beginPath();
+                ctx.ellipse(x, y, 60, 30, angle, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.fillStyle = colorCenter;
+            ctx.beginPath();
+            ctx.arc(cx, cy, 40, 0, Math.PI * 2);
+            ctx.fill();
+        };
+
+        this.textures.tulip = createTex(ctx => {
+            // Side view cup
+            ctx.clearRect(0, 0, 256, 256);
+            ctx.fillStyle = '#FF0000'; // Red
+            ctx.beginPath();
+            ctx.moveTo(80, 200); ctx.quadraticCurveTo(60, 100, 128, 50); ctx.quadraticCurveTo(196, 100, 176, 200);
+            ctx.fill();
+        });
+        this.textures.daffodil = createTex(ctx => drawFlower(ctx, '#FFFF00', '#FFA500', 6));
+        this.textures.daylily = createTex(ctx => drawFlower(ctx, '#FF8C00', '#FFFF00', 6)); // Orange/Yellow
+        this.textures.lentenrose = createTex(ctx => drawFlower(ctx, '#D8BFD8', '#98FB98', 5)); // Muted purple/green
+        this.textures.coneflower = createTex(ctx => drawFlower(ctx, '#DA70D6', '#8B4513', 12)); // Purple/Brown
+        this.textures.wildflower = createTex(ctx => {
+            // Scatter small dots
+            ctx.clearRect(0, 0, 256, 256);
+            for (let i = 0; i < 50; i++) {
+                ctx.fillStyle = Math.random() > 0.5 ? '#ADD8E6' : '#FFFFFF';
+                ctx.beginPath();
+                ctx.arc(Math.random() * 256, Math.random() * 256, 15, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+
+        // HERBS
+        this.textures.basil = createTex(ctx => drawCluster(ctx, '#228B22', '#32CD32', 'basil')); // Basic leaves
+        this.textures.lemonbalm = createTex(ctx => drawCluster(ctx, '#7CFC00', '#32CD32', 'lemonbalm')); // Lighter Green
+        this.textures.mint = createTex(ctx => drawCluster(ctx, '#006400', '#2E8B57', 'mint')); // Dark Green
+
+        this.textures.lavender = createTex(ctx => {
+            ctx.clearRect(0, 0, 256, 256);
+            // Stems
+            ctx.strokeStyle = '#228B22';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 30; i++) {
+                const x = 30 + Math.random() * 196;
+                const y = 256;
+                const h = 100 + Math.random() * 100;
+                ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - h); ctx.stroke();
+                // Purple flower bits at top
+                ctx.fillStyle = '#9370DB'; // Medium Purple
+                for (let j = 0; j < 10; j++) {
+                    ctx.beginPath();
+                    ctx.arc(x + (Math.random() - 0.5) * 10, y - h + (Math.random() - 0.5) * 40, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        });
+
+        this.textures.chives = createTex(ctx => {
+            ctx.clearRect(0, 0, 256, 256);
+            ctx.strokeStyle = '#32CD32'; // Lime Green
+            ctx.lineWidth = 3;
+            for (let i = 0; i < 50; i++) {
+                const x = 128 + (Math.random() - 0.5) * 100;
+                const y = 256;
+                const h = 150 + Math.random() * 80;
+                ctx.beginPath(); ctx.moveTo(x, y);
+                ctx.quadraticCurveTo(x + (Math.random() - 0.5) * 50, y - h / 2, x + (Math.random() - 0.5) * 100, y - h);
+                ctx.stroke();
+            }
+        });
+
+        // HOPE GARDEN
+        this.textures.thyme = createTex(ctx => drawCluster(ctx, '#556B2F', '#808000', 'thyme'));
+        this.textures.hope_blue = createTex(ctx => drawFlower(ctx, '#4169E1', '#FFFF00', 8));
+        this.textures.hope_white = createTex(ctx => drawFlower(ctx, '#FFFFFF', '#FFFFE0', 12));
+        this.textures.hope_yellow = createTex(ctx => drawFlower(ctx, '#FFD700', '#FFA500', 10));
+
+        // VEGETABLE GARDEN
+        const drawCrop = (ctx, leafColor, fruitColor, fruitSize) => {
+            drawCluster(ctx, leafColor, leafColor, 'standard'); // Base leaves
+            // Fruits
+            ctx.fillStyle = fruitColor;
+            for (let i = 0; i < 15; i++) {
+                const x = 30 + Math.random() * 196;
+                const y = 30 + Math.random() * 196;
+                ctx.beginPath();
+                ctx.arc(x, y, fruitSize, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        };
+
+        this.textures.tomato = createTex(ctx => drawCrop(ctx, '#228B22', '#FF4500', 8)); // Red fruit
+        this.textures.pepper = createTex(ctx => drawCrop(ctx, '#2E8B57', '#FFD700', 6)); // Yellow/Red fruit
+        this.textures.eggplant = createTex(ctx => drawCrop(ctx, '#228B22', '#4B0082', 9)); // Purple fruit
+
+        this.textures.lettuce = createTex(ctx => drawCluster(ctx, '#90EE90', '#32CD32', 'standard')); // Light Green
+        this.textures.kale = createTex(ctx => drawCluster(ctx, '#2F4F4F', '#006400', 'standard')); // Dark Green curly
+        this.textures.broccoli = createTex(ctx => {
+            drawCluster(ctx, '#2E8B57', '#228B22', 'standard');
+            // Head
+            ctx.fillStyle = '#9ACD32';
+            ctx.beginPath(); ctx.arc(128, 128, 40, 0, Math.PI * 2); ctx.fill();
+        });
+
+        //ctx = null; // Cleanup context ref
+        this.textures.pumpkin = createTex(ctx => {
+            // Vine + Pumpkin
+            ctx.fillStyle = '#228B22'; ctx.fillRect(0, 200, 256, 20); // Vine
+            ctx.fillStyle = '#FF8C00';
+            ctx.beginPath(); ctx.ellipse(128, 200, 60, 45, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#006400'; ctx.fillRect(124, 155, 8, 15); // Stem
+        });
+
+        this.textures.squash = createTex(ctx => {
+            drawCluster(ctx, '#228B22', '#32CD32', 'standard');
+            ctx.fillStyle = '#FFD700'; // Flower
+            ctx.beginPath(); ctx.arc(128, 128, 20, 0, Math.PI * 2); ctx.fill();
+        });
+
+        this.textures.onion = createTex(ctx => {
+            ctx.clearRect(0, 0, 256, 256);
+            ctx.strokeStyle = '#3CB371'; ctx.lineWidth = 4;
+            for (let i = 0; i < 20; i++) {
+                const x = 128 + (Math.random() - 0.5) * 40;
+                ctx.beginPath(); ctx.moveTo(x, 256); ctx.lineTo(x + (Math.random() - 0.5) * 20, 100); ctx.stroke();
+            }
+        });
+
+        this.textures.okra = createTex(ctx => drawCrop(ctx, '#228B22', '#F0E68C', 5)); // Green with yellowish pods
+        this.textures.marigold = createTex(ctx => drawFlower(ctx, '#FFA500', '#FF4500', 16));
+
+
+        this.textures.okra = createTex(ctx => drawCrop(ctx, '#228B22', '#F0E68C', 5)); // Green with yellowish pods
+        this.textures.marigold = createTex(ctx => drawFlower(ctx, '#FFA500', '#FF4500', 16));
+
+        // WICKS GARDEN
+        this.textures.sunflower = createTex(ctx => {
+            drawFlower(ctx, '#FFD700', '#8B4513', 20); // Bright Yellow, Big Brown Center
+        });
+        this.textures.cattail = createTex(ctx => {
+            // Reed with brown cylinder
+            ctx.clearRect(0, 0, 256, 256);
+            ctx.fillStyle = '#556B2F'; ctx.fillRect(120, 100, 16, 156); // Stem
+            ctx.fillStyle = '#8B4513'; ctx.beginPath(); ctx.ellipse(128, 80, 15, 60, 0, 0, Math.PI * 2); ctx.fill(); // Brown head
+        });
+
+        // TREES & BAMBOO
+        this.textures.oak = createTex(ctx => drawCluster(ctx, '#006400', '#556B2F', 'standard')); // Dark/Olive
+        this.textures.pine = createTex(ctx => {
+            // Needles: Dense, outward pointing
+            ctx.clearRect(0, 0, 256, 256);
+            ctx.lineWidth = 1;
+
+            for (let i = 0; i < 2000; i++) {
+                // Sample point in circle
+                const r = Math.random() * 120;
+                const theta = Math.random() * Math.PI * 2;
+                const cx = 128 + Math.cos(theta) * r;
+                const cy = 128 + Math.sin(theta) * r;
+
+                // Radiate outward
+                const angle = theta + (Math.random() - 0.5) * 0.5; // Radial + jitter
+                const len = 10 + Math.random() * 20;
+
+                ctx.strokeStyle = Math.random() > 0.5 ? '#2F4F4F' : '#355E3B'; // Dark Slate Gray vs Hunter Green
+
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(cx + Math.cos(angle) * len, cy + Math.sin(angle) * len);
+                ctx.stroke();
+            }
+        });
+        this.textures.cedar = createTex(ctx => {
+            // Scaly plates
+            drawCluster(ctx, '#2F4F4F', '#708090', 'standard'); // Blue-ish
+        });
+
+        this.textures.bamboo = createTex(ctx => {
+            ctx.clearRect(0, 0, 256, 256);
+            ctx.fillStyle = '#9ACD32'; // YellowGreen
+            // Stalks
+            for (let i = 0; i < 8; i++) {
+                const w = 15;
+                const x = 30 + i * 30;
+                ctx.fillRect(x, 0, w, 256);
+                // Nodes
+                ctx.fillStyle = '#556B2F';
+                for (let j = 0; j < 5; j++) {
+                    ctx.fillRect(x - 2, j * 50 + 10, w + 4, 4);
+                }
+                ctx.fillStyle = '#9ACD32'; // Reset
+            }
+        });
+
+
+
+        // SPENCER TRIBUTE GARDEN
+        this.textures.trillium = createTex(ctx => {
+            // 3 Green leaves, 3 White petals
+            drawCluster(ctx, '#228B22', '#32CD32', 'standard');
+            // Flower
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            for (let i = 0; i < 3; i++) {
+                const angle = i * (Math.PI * 2 / 3);
+                ctx.ellipse(128 + Math.cos(angle) * 20, 128 + Math.sin(angle) * 20, 20, 10, angle, 0, Math.PI * 2);
+            }
+            ctx.fill();
+        });
+
+        this.textures.lambsear = createTex(ctx => {
+            // Silvery leaves
+            drawCluster(ctx, '#778899', '#B0C4DE', 'standard'); // Light Slate Gray / Light Steel Blue
+        });
+
+        this.textures.boxwood = createTex(ctx => drawCluster(ctx, '#006400', '#2E8B57', 'standard')); // Dark Green
+
+
+        // AQUATIC
+        this.textures.rock = createTex(ctx => {
+            ctx.fillStyle = '#808080'; ctx.fillRect(0, 0, 256, 256); // Grey base
+            // Noise/Grime
+            for (let i = 0; i < 400; i++) {
+                ctx.fillStyle = Math.random() > 0.5 ? '#696969' : '#A9A9A9';
+                const s = Math.random() * 20 + 5;
+                ctx.fillRect(Math.random() * 256, Math.random() * 256, s, s);
+            }
+            // Cracks
+            ctx.strokeStyle = '#2F4F4F'; ctx.lineWidth = 2;
+            for (let i = 0; i < 10; i++) {
+                const x = Math.random() * 256; const y = Math.random() * 256;
+                ctx.beginPath(); ctx.moveTo(x, y);
+                ctx.lineTo(x + (Math.random() - 0.5) * 100, y + (Math.random() - 0.5) * 100);
+                ctx.stroke();
+            }
+        });
+
+        this.textures.lotus = createTex(ctx => drawFlower(ctx, '#FF69B4', '#FFFF00', 16)); // Pink Lotus
+        this.textures.victorialily = createTex(ctx => {
+            // Giant rimmed pad
+            ctx.clearRect(0, 0, 256, 256);
+            ctx.fillStyle = '#2E8B57';
+            ctx.beginPath();
+            ctx.arc(128, 128, 120, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#228B22'; // Rim
+            ctx.lineWidth = 20;
+            ctx.stroke();
+            ctx.strokeStyle = '#000000'; // Ribs
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 8; i++) {
+                ctx.beginPath(); ctx.moveTo(128, 128);
+                ctx.lineTo(128 + Math.cos(i * Math.PI / 4) * 120, 128 + Math.sin(i * Math.PI / 4) * 120);
+                ctx.stroke();
+            }
+        });
+
+        // Fern: Realistic Frond (Keep existing)
+        this.textures.fern = createTex(ctx => {
+            ctx.clearRect(0, 0, 256, 256);
+            ctx.fillStyle = '#228B22';
+            ctx.beginPath();
+            ctx.moveTo(128, 240);
+            ctx.bezierCurveTo(200, 180, 220, 50, 128, 10);
+            ctx.bezierCurveTo(36, 50, 56, 180, 128, 240);
+            ctx.fill();
+            ctx.globalCompositeOperation = 'destination-out';
+            for (let i = 0; i < 20; i++) {
+                const y = 20 + i * 10;
+                ctx.beginPath();
+                ctx.moveTo(0, y); ctx.lineTo(100, y + 5); ctx.lineTo(0, y + 10);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(256, y); ctx.lineTo(156, y + 5); ctx.lineTo(256, y + 10);
+                ctx.fill();
+            }
+            ctx.globalCompositeOperation = 'source-over';
+        });
+
+        this.textures.lilypad = createTex(ctx => {
+            ctx.clearRect(0, 0, 256, 256);
+            ctx.fillStyle = '#2E8B57';
+            ctx.beginPath();
+            ctx.arc(128, 128, 100, 0.2, Math.PI * 1.94, false);
+            ctx.lineTo(128, 128);
+            ctx.fill();
+        });
+    }
+
+    createMaterials() {
+        const makeMat = (tex) => new THREE.MeshStandardMaterial({
+            map: tex,
+            transparent: true,
+            alphaTest: 0.5,
+            side: THREE.DoubleSide
+        });
+
+        this.materials.dogwood = makeMat(this.textures.dogwood);
+        this.materials.magnolia = makeMat(this.textures.magnolia);
+        this.materials.standardLeaves = makeMat(this.textures.standard);
+        this.materials.azalea = makeMat(this.textures.azalea);
+        this.materials.hydrangea = makeMat(this.textures.hydrangea);
+        this.materials.fern = makeMat(this.textures.fern);
+        this.materials.lilypad = makeMat(this.textures.lilypad);
+
+        // NEW MATERIALS
+        this.materials.rhododendron = makeMat(this.textures.rhododendron);
+        this.materials.cherryblossom = makeMat(this.textures.cherryblossom);
+        this.materials.tulip = makeMat(this.textures.tulip);
+        this.materials.daffodil = makeMat(this.textures.daffodil);
+        this.materials.daylily = makeMat(this.textures.daylily);
+        this.materials.lentenrose = makeMat(this.textures.lentenrose);
+        this.materials.coneflower = makeMat(this.textures.coneflower);
+        this.materials.wildflower = makeMat(this.textures.wildflower);
+        this.materials.lotus = makeMat(this.textures.lotus);
+        this.materials.victorialily = makeMat(this.textures.victorialily);
+        this.materials.rock = makeMat(this.textures.rock);
+
+        // HERBS
+        this.materials.basil = makeMat(this.textures.basil);
+        this.materials.lavender = makeMat(this.textures.lavender);
+        this.materials.chives = makeMat(this.textures.chives);
+        this.materials.lemonbalm = makeMat(this.textures.lemonbalm);
+        this.materials.mint = makeMat(this.textures.mint);
+
+        // VEGETABLES
+        this.materials.tomato = makeMat(this.textures.tomato);
+        this.materials.pepper = makeMat(this.textures.pepper);
+        this.materials.eggplant = makeMat(this.textures.eggplant);
+        this.materials.lettuce = makeMat(this.textures.lettuce);
+        this.materials.kale = makeMat(this.textures.kale);
+        this.materials.broccoli = makeMat(this.textures.broccoli);
+        this.materials.onion = makeMat(this.textures.onion);
+        this.materials.pumpkin = makeMat(this.textures.pumpkin);
+        this.materials.squash = makeMat(this.textures.squash);
+        this.materials.okra = makeMat(this.textures.okra);
+        this.materials.okra = makeMat(this.textures.okra);
+        this.materials.marigold = makeMat(this.textures.marigold);
+        this.materials.sunflower = makeMat(this.textures.sunflower);
+        this.materials.cattail = makeMat(this.textures.cattail);
+
+        // TREES & BAMBOO
+        this.materials.oak = makeMat(this.textures.oak);
+        this.materials.pine = makeMat(this.textures.pine);
+        this.materials.cedar = makeMat(this.textures.cedar);
+        this.materials.bamboo = makeMat(this.textures.bamboo);
+
+        // SPENCER TRIBUTE
+        this.materials.trillium = makeMat(this.textures.trillium);
+        this.materials.lambsear = makeMat(this.textures.lambsear);
+        this.materials.boxwood = makeMat(this.textures.boxwood);
+
+        this.materials.trunk = new THREE.MeshStandardMaterial({ color: 0x5D4037 });
+    }
+
+    createTree(type) {
+        const group = new THREE.Group();
+        const typeName = type.charAt(0).toUpperCase() + type.slice(1);
+        group.userData.name = typeName + " Tree";
+
+        // Trunk (Taller)
+        // Height 4m, centered at y=2
+        const trunkGeo = new THREE.CylinderGeometry(0.2, 0.5, 4, 6);
+        const trunk = new THREE.Mesh(trunkGeo, this.materials.trunk);
+        trunk.position.y = 2.0;
+        group.add(trunk);
+
+        // Canopy
+        let mat = this.materials.standardLeaves;
+        if (this.materials[type]) mat = this.materials[type];
+
+        if (type === 'pine' || type === 'cedar') {
+            // Conifer Shape: Tiered
+            // Shift up to reveal trunk
+            const tiers = 3;
+            for (let i = 0; i < tiers; i++) {
+                const size = 6 - i * 1.5; // 6, 4.5, 3
+                const y = 4 + i * 2;      // Starts at 4 (Bottom of largest tier ~1m off ground if size 6? No, size 6 -> extent +/-3. 4-3=1. Good.)
+
+                const geo = new THREE.PlaneGeometry(size, size);
+                const p1 = new THREE.Mesh(geo, mat);
+                p1.position.y = y;
+                const p2 = new THREE.Mesh(geo, mat);
+                p2.rotation.y = Math.PI / 2;
+                p2.position.y = y;
+                group.add(p1, p2);
+            }
+        } else {
+            // Broadleaf Shape (Standard, Oak, Dogwood, etc)
+            const size = (type === 'oak') ? 8 : 6; // Oak is wider
+            const geo = new THREE.PlaneGeometry(size, size);
+
+            // Shift up. If size is 8, half is 4.
+            // We want bottom at ~2.5m. Center = 2.5 + 4 = 6.5.
+            const canopyY = (size / 2) + 2.5;
+
+            const p1 = new THREE.Mesh(geo, mat);
+            p1.position.y = canopyY;
+            p1.rotation.y = 0;
+
+            const p2 = new THREE.Mesh(geo, mat);
+            p2.position.y = canopyY;
+            p2.rotation.y = Math.PI / 3;
+
+            const p3 = new THREE.Mesh(geo, mat);
+            p3.position.y = canopyY;
+            p3.rotation.y = 2 * Math.PI / 3;
+
+            group.add(p1, p2, p3);
+        }
+        return group;
+    }
+
+    createBamboo() {
+        const group = new THREE.Group();
+        group.userData.name = "Bamboo";
+        // Stalk texture has multiple stalks, so one crossed plane = a clump
+        const size = 6;
+        const geo = new THREE.PlaneGeometry(size * 0.6, size); // Tall and thin aspect
+        const mat = this.materials.bamboo;
+
+        const p1 = new THREE.Mesh(geo, mat);
+        p1.position.y = size / 2;
+        const p2 = new THREE.Mesh(geo, mat);
+        p2.position.y = size / 2;
+        p2.rotation.y = Math.PI / 2;
+
+        group.add(p1, p2);
+        return group;
+    }
+
+    createBush(type) {
+        const typeName = type.charAt(0).toUpperCase() + type.slice(1);
+        const group = new THREE.Group();
+        group.userData.name = typeName + " Bush";
+
+        const size = 2.5;
+        const geo = new THREE.PlaneGeometry(size, size);
+
+        let mat = this.materials.standardLeaves;
+        if (type === 'azalea') mat = this.materials.azalea;
+        if (type === 'hydrangea') mat = this.materials.hydrangea;
+
+        const p1 = new THREE.Mesh(geo, mat);
+        p1.position.y = size / 2; // FIX: Raise to ground
+        p1.rotation.y = 0;
+        const p2 = new THREE.Mesh(geo, mat);
+        p2.position.y = size / 2; // FIX: Raise to ground
+        p2.rotation.y = Math.PI / 2;
+
+        group.add(p1, p2);
+        return group;
+    }
+
+    createFern() {
+        // Reuse createBush structure but with Fern mat and smaller
+        const group = new THREE.Group();
+        group.userData.name = "Fern";
+        const size = 1.5;
+        const geo = new THREE.PlaneGeometry(size, size);
+        const mat = this.materials.fern;
+
+        const p1 = new THREE.Mesh(geo, mat);
+        p1.position.y = size / 2;
+        p1.rotation.y = 0;
+        const p2 = new THREE.Mesh(geo, mat);
+        p2.position.y = size / 2;
+        p2.rotation.y = Math.PI / 3;
+        const p3 = new THREE.Mesh(geo, mat);
+        p3.position.y = size / 2;
+        p3.rotation.y = 2 * Math.PI / 3;
+
+        group.add(p1, p2, p3);
+        return group;
+    }
+
+    createFlower(type) {
+        const typeName = type.charAt(0).toUpperCase() + type.slice(1);
+        const group = new THREE.Group();
+        group.userData.name = typeName; // e.g. "Tulip"
+
+        const size = 0.8;
+        const geo = new THREE.PlaneGeometry(size, size);
+        let mat = this.materials.wildflower;
+        if (this.materials[type]) mat = this.materials[type];
+
+        // Crossed planes for flower
+        const p1 = new THREE.Mesh(geo, mat);
+        p1.position.y = size / 2; // FIX: Raise to ground
+        p1.rotation.y = 0;
+        const p2 = new THREE.Mesh(geo, mat);
+        p2.position.y = size / 2; // FIX: Raise to ground
+        p2.rotation.y = Math.PI / 2;
+
+        group.add(p1, p2);
+        return group;
+    }
+
+    createAquatic(type) {
+        const typeName = type.charAt(0).toUpperCase() + type.slice(1);
+        const group = new THREE.Group();
+        group.userData.name = typeName;
+
+        let mat = this.materials.lilypad;
+        let size = 1.0;
+
+        if (type === 'victorialily') {
+            mat = this.materials.victorialily;
+            size = 2.5; // Giant
+        } else if (type === 'lotus') {
+            mat = this.materials.lotus;
+            size = 1.2;
+        }
+
+        const geo = new THREE.PlaneGeometry(size, size);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.x = -Math.PI / 2;
+        group.add(mesh);
+
+        return group;
+    }
+
+    createHiveBox() {
+        const group = new THREE.Group();
+        group.userData.name = "Hive Box";
+
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF }); // Painted White
+
+        // Stack of boxes
+        for (let i = 0; i < 3; i++) {
+            const box = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.6), woodMat);
+            box.position.y = 0.2 + i * 0.4;
+            group.add(box);
+        }
+
+        // Lid
+        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.1, 0.7), new THREE.MeshStandardMaterial({ color: 0xC0C0C0 }));
+        lid.position.y = 1.25;
+        group.add(lid);
+
+        // Stand
+        const legGeo = new THREE.BoxGeometry(0.1, 0.5, 0.1);
+        const standMat = new THREE.MeshStandardMaterial({ color: 0x5D4037 });
+        [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]].forEach(p => {
+            const leg = new THREE.Mesh(legGeo, standMat);
+            leg.position.set(p[0], -0.25, p[1]);
+            group.add(leg);
+        });
+
+        // Lift whole group so legs sat on ground (legs go down to -0.5)
+        // Actually legs center at -0.25, height 0.5 => range 0 to -0.5 relative to group 0?
+        // Box 0 starts at 0. legs go down.
+        // Let's lift group by 0.5
+        group.position.y = 0.5;
+
+        // Wrapper to fix pivot
+        const wrapper = new THREE.Group();
+        wrapper.add(group);
+        return wrapper;
+    }
+
+    createRock() {
+        const group = new THREE.Group();
+        group.userData.name = "Rock";
+
+        // Rounded 3D Rock (Dodecahedron)
+        // Radius 1.0 base
+        const geo = new THREE.DodecahedronGeometry(1.0, 0);
+        const mat = this.materials.rock;
+
+        const mesh = new THREE.Mesh(geo, mat);
+
+        // Randomize rotation for variety
+        mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+
+        // Non-uniform scaling for natural look
+        mesh.scale.set(
+            0.8 + Math.random() * 0.4,
+            0.7 + Math.random() * 0.4,
+            0.8 + Math.random() * 0.4
+        );
+        // Enable shadows
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        group.add(mesh);
+        return group;
+    }
+
+}

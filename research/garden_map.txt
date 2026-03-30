@@ -1,0 +1,127 @@
+o provide the coordinates, I have mapped the image onto a standard grid where (0,0) is the bottom-left corner and (100,100) is the top-right corner.
+Here is the combined list of all numbered locations from the Huntsville Botanical Garden map:
+Huntsville Botanical Garden: Location Master List
+No.
+Name
+Category
+Map Position (X, Y)
+1
+Propst Guest Center
+Building
+(55, 27)
+2
+Teledyne Terrace
+Building
+(54, 34)
+3
+Cherry Circle
+Garden/Interest
+(51, 39)
+4
+Spencer Volunteer Tribute Garden
+Garden/Interest
+(55, 39)
+5
+Murray Hall
+Building
+(61, 34)
+6
+Train Garden
+Garden/Interest
+(67, 41)
+7
+Cedar Glade
+Garden/Interest
+(50, 45)
+8
+Four Seasons Garden
+Garden/Interest
+(55, 52)
+9
+Damson Aquatic Garden
+Garden/Interest
+(54, 65)
+10
+Summer House
+Building
+(68, 69)
+11
+Holmes Trillium Garden
+Garden/Interest
+(48, 66)
+12
+Harbarger Hydrangea Border
+Garden/Interest
+(44, 65)
+13
+Van Valkenburgh Daylily Garden
+Garden/Interest
+(36, 61)
+14
+Herb Garden
+Garden/Interest
+(32, 63)
+15
+Mother Earth Troll Garden
+Garden/Interest
+(23, 53)
+16
+Garden of Hope
+Garden/Interest
+(18, 56)
+17
+Fern Glade
+Garden/Interest
+(35, 50)
+18
+Demonstration Vegetable Garden
+Garden/Interest
+(19, 45)
+19
+Trading Post
+Garden/Interest
+(34, 46)
+20
+Wicks Family Garden
+Garden/Interest
+(32, 35)
+21
+Lewis Bird Watch
+Garden/Interest
+(24, 37)
+22
+Tweetsville
+Garden/Interest
+(16, 34)
+23
+Anderson Education Center
+Building
+(38, 29)
+24
+Pollinator Walk
+Garden/Interest
+(41, 30)
+25
+Boeing-Toyota Amphitheatre
+Building
+(33, 25)
+26
+Linda J Smith Administration Bldg
+Building
+(75, 36)
+27
+Nichols Arbor
+Building
+(74, 39)
+28
+Grisham Pavilion
+Building
+(85, 31)
+29
+South Meadow
+Garden/Interest
+(62, 77)
+30
+Native Plants Teaching Garden
+Garden/Interest
+(31, 7)

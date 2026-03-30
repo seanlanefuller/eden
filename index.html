@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Garden</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Import Three.js as an ES module from a CDN or local if preferred, 
+         using unpkg for simplicity in this setup. -->
+  <script type="importmap">
+        {
+          "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+          }
+        }
+    </script>
+</head>
+
+<body>
+  <div id="canvas-container"></div>
+
+  <div id="hud">
+    <div id="coordinates">POS: 0, 0, 0</div>
+    <div id="heading">HDG: 0°</div>
+    <div id="speed">SPD: 0 m/s</div>
+    <div id="controls-hint">WASD to Move | SPACE to Jump | F to Fly | Mouse to Look</div>
+    <div id="center-info"></div>
+    <div id="minimap-container">
+      <img id="minimap-image" src="research/garden_map.gif" alt="Minimap">
+      <div id="player-dot"></div>
+      <div id="location-labels"></div>
+    </div>
+  </div>
+
+  <style>
+    #center-info {
+      position: fixed;
+      bottom: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      color: white;
+      font-family: Arial, sans-serif;
+      font-size: 18px;
+      text-shadow: 1px 1px 2px black;
+      pointer-events: none;
+      text-align: center;
+    }
+
+    /* Simple Crosshair Removed */
+    #center-info::before {
+      content: '';
+      display: none;
+    }
+  </style>
+
+  <script type="module" src="main.js"></script>
+</body>
+
+</html>
